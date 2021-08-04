@@ -35,6 +35,7 @@ import (
 	"github.com/containerd/containerd/version"
 	"github.com/containerd/ttrpc"
 	"github.com/gogo/protobuf/proto"
+	ptypes "github.com/gogo/protobuf/types"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
@@ -60,6 +61,7 @@ type Init func(context.Context, string, Publisher, func()) (Shim, error)
 type Shim interface {
 	Cleanup(ctx context.Context) (*shimapi.DeleteResponse, error)
 	StartShim(ctx context.Context, opts StartOpts) (string, error)
+	Shutdown(ctx context.Context, r *shimapi.ShutdownRequest) (*ptypes.Empty, error)
 }
 
 // OptsKey is the context key for the Opts value.
@@ -344,7 +346,15 @@ func run(id string, initFunc Init, config Config) error {
 		}
 	}
 
-	if err := serve(ctx, server, signals); err != nil {
+	if err := serve(ctx, server, signals, func() {
+		log.G(ctx).Debug("Sending shutdown request")
+		_, err = service.Shutdown(ctx, &shimapi.ShutdownRequest{
+			Now: true,
+		})
+		if err != nil {
+			log.G(ctx).WithError(err).Error("Failed to shutdown shim")
+		}
+	}); err != nil {
 		if err != context.Canceled {
 			return err
 		}
@@ -366,7 +376,7 @@ func run(id string, initFunc Init, config Config) error {
 
 // serve serves the ttrpc API over a unix socket in the current working directory
 // and blocks until the context is canceled
-func serve(ctx context.Context, server *ttrpc.Server, signals chan os.Signal) error {
+func serve(ctx context.Context, server *ttrpc.Server, signals chan os.Signal, shutdown func()) error {
 	dump := make(chan os.Signal, 32)
 	setupDumpStacks(dump)
 
@@ -396,6 +406,10 @@ func serve(ctx context.Context, server *ttrpc.Server, signals chan os.Signal) er
 			dumpStacks(logger)
 		}
 	}()
+
+	// We handle exit signals separately because we need to run things and do not want to block the reaper from doing its work.
+	go handleExitSignals(ctx, logger, shutdown)
+
 	return handleSignals(ctx, logger, signals)
 }
 

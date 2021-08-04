@@ -38,12 +38,28 @@ import (
 // sub-reaper so that the container processes are reparented
 func setupSignals(config Config) (chan os.Signal, error) {
 	signals := make(chan os.Signal, 32)
-	smp := []os.Signal{unix.SIGTERM, unix.SIGINT, unix.SIGPIPE}
+	smp := []os.Signal{unix.SIGPIPE}
 	if !config.NoReaper {
 		smp = append(smp, unix.SIGCHLD)
 	}
 	signal.Notify(signals, smp...)
 	return signals, nil
+}
+
+func handleExitSignals(ctx context.Context, logger *logrus.Entry, cancel context.CancelFunc) {
+	ch := make(chan os.Signal, 32)
+	signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM)
+
+	for {
+		select {
+		case <-ctx.Done():
+			logger.WithError(ctx.Err()).Debug("Done watching for exit signals")
+			return
+		case s := <-ch:
+			logger.Debugf("Caught exit signal: %s", s)
+			cancel()
+		}
+	}
 }
 
 func setupDumpStacks(dump chan<- os.Signal) {

@@ -46,6 +46,9 @@ func serveListener(path string) (net.Listener, error) {
 	return nil, errors.New("not supported")
 }
 
+func handleExitSignals(ctx context.Context, logger *logrus.Entry, cancel context.CancelFunc) error {
+	return errors.New("not supported")
+}
 func handleSignals(ctx context.Context, logger *logrus.Entry, signals chan os.Signal) error {
 	return errors.New("not supported")
 }

@@ -679,7 +679,8 @@ func (s *service) Shutdown(ctx context.Context, r *taskAPI.ShutdownRequest) (*pt
 	defer s.mu.Unlock()
 
 	// return out if the shim is still servicing containers
-	if len(s.containers) > 0 {
+	if !r.Now && len(s.containers) > 0 {
+		logrus.Debug("Not shutting down due to active containers")
 		return empty, nil
 	}
 
